@@ -6,6 +6,18 @@ import sys
 import os
 import json
 import subprocess
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from common.platform_utils import (
+    get_fast_temp_dir,
+    get_temp_file,
+    run_pdfcraft,
+    is_windows
+)
 
 def traduzir_datasheet(pdf_in, out_dir, models_custom=None):
     os.makedirs(out_dir, exist_ok=True)
@@ -95,23 +107,43 @@ def traduzir_datasheet(pdf_in, out_dir, models_custom=None):
             })
         steps.append({"tool": "doc_save", "args": {"doc": 1, "path": target_pdf}})
         
-        script_path = f"/tmp/steps_p{page}.json"
-        with open(script_path, "w") as f:
+        script_path = str(get_temp_file(prefix=f"steps_p{page}_", suffix=".json"))
+        with open(script_path, "w", encoding="utf-8") as f:
             json.dump(steps, f)
             
-        res = subprocess.run(["pdfcraft-cli", "run", "--script", script_path, "--report"], capture_output=True, text=True)
-        report = json.loads(res.stdout)
-        return report.get("ok", False)
+        res = run_pdfcraft(["run", "--script", script_path, "--report"])
+        try:
+            os.remove(script_path)
+        except OSError:
+            pass
+        if not res or res.returncode != 0:
+            return False
+        try:
+            report = json.loads(res.stdout)
+            return report.get("ok", False)
+        except Exception:
+            return False
 
-    temp_p1 = "/tmp/datasheet_p1.pdf"
+    temp_p1 = str(get_temp_file(prefix="datasheet_p1_", suffix=".pdf"))
     if apply_edits(pdf_in, 1, page1_edits, temp_p1):
         if apply_edits(temp_p1, 2, page2_edits, pdf_out):
+            try:
+                os.remove(temp_p1)
+            except OSError:
+                pass
             return pdf_out
+    try:
+        if os.path.exists(temp_p1):
+            os.remove(temp_p1)
+    except OSError:
+        pass
     return None
 
 if __name__ == "__main__":
-    pdf = sys.argv[1] if len(sys.argv) > 1 else "/home/oem/Documentos/SG05LP3-EU-SM2.pdf"
-    out = sys.argv[2] if len(sys.argv) > 2 else "/home/oem/Documentos/SG05LP3-EU-SM2"
+    default_pdf = Path.home() / "Documentos" / "SG05LP3-EU-SM2.pdf"
+    default_out = Path.home() / "Documentos" / "SG05LP3-EU-SM2"
+    pdf = sys.argv[1] if len(sys.argv) > 1 else str(default_pdf)
+    out = sys.argv[2] if len(sys.argv) > 2 else str(default_out)
     res = traduzir_datasheet(pdf, out)
     if res:
         print(f"Sucesso: {res}")

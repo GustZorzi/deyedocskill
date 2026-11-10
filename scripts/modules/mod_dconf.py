@@ -20,6 +20,13 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from common.deye_grammar import derive_family_name, get_dconf_family_desc, format_family_folder_name
+from common.platform_utils import (
+    get_fast_temp_dir,
+    get_temp_file,
+    run_pdfcraft,
+    resolve_template_path,
+    is_windows
+)
 from modules.mod_pet import DeyePetGenerator
 
 MESES_PT = [
@@ -30,32 +37,30 @@ MESES_PT = [
 class DeyeDconfGenerator:
     def __init__(self, template_path=None):
         if template_path is None:
-            skill_root = Path(__file__).resolve().parent.parent.parent
-            template_path = skill_root / "resources" / "templates" / "BASE_DCONF.pdf"
-            if not template_path.exists():
-                template_path = Path("/home/oem/Documentos/BASE_DCONF.pdf")
-        self.template_path = Path(template_path)
+            self.template_path = resolve_template_path("BASE_DCONF.pdf")
+        else:
+            self.template_path = Path(template_path)
         if not self.template_path.exists():
             raise FileNotFoundError(f"Template DCONF não encontrado em: {self.template_path}")
 
     def _run_pdfcraft(self, script):
-        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as f:
+        temp_dir = str(get_fast_temp_dir())
+        with tempfile.NamedTemporaryFile("w", suffix=".json", dir=temp_dir, delete=False, encoding="utf-8") as f:
             json.dump(script, f)
             script_path = f.name
 
-        cmd = ["pdfcraft-cli", "run", "--script", script_path, "--report"]
-        p = subprocess.run(cmd, capture_output=True, text=True)
+        p = run_pdfcraft(["run", "--script", script_path, "--report"])
         try:
             os.remove(script_path)
         except OSError:
             pass
 
-        if p.returncode != 0:
-            print(f"[pdfcraft ERRO]: {p.stderr}")
+        if not p or p.returncode != 0:
+            print(f"[pdfcraft ERRO]: {p.stderr if p else ''}")
             return None
         try:
             return json.loads(p.stdout)
-        except json.JSONDecodeError:
+        except (json.JSONDecodeError, AttributeError):
             return None
 
     def get_lines(self, pdf_file, page=1):
@@ -180,12 +185,10 @@ class DeyeDconfGenerator:
         return str(out_pdf)
 
 if __name__ == "__main__":
-    src_pdf = "/home/oem/Documentos/SG05LP3-EU-SM2.pdf"
-    out_dir = "/home/oem/Documentos/SG05LP3-EU-SM2"
-    if len(sys.argv) > 1:
-        src_pdf = sys.argv[1]
-    if len(sys.argv) > 2:
-        out_dir = sys.argv[2]
+    default_src = Path.home() / "Documentos" / "SG05LP3-EU-SM2.pdf"
+    default_out = Path.home() / "Documentos" / "SG05LP3-EU-SM2"
+    src_pdf = sys.argv[1] if len(sys.argv) > 1 else str(default_src)
+    out_dir = sys.argv[2] if len(sys.argv) > 2 else str(default_out)
 
     gen = DeyeDconfGenerator()
     gen.generate(src_pdf, out_dir)

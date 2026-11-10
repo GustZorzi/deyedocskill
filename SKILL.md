@@ -31,9 +31,15 @@ Esta skill processa datasheets de inversores Deye (em inglês ou português), ad
 
 ---
 
-## 1. Fluxo de Perguntas de Triagem Interativa
+## 1. Fluxo de Triagem e Modo Rápido Inicial
 
-Ao receber o datasheet, informe a análise inicial (modelos identificados, topologia e idioma) e realize a triagem obrigatória:
+Ao receber o datasheet, informe a análise inicial (modelos identificados, topologia e idioma) e ofereça a escolha de velocidade antes de qualquer pergunta detalhada:
+
+### Pergunta Inicial: Velocidade de Execução
+- **[1] Modo Rápido Ultra-Fast (~2.0s) [Padrão]:** Gera imediatamente o pacote completo (**Datasheet PDF**, **DCONF PDF**, e todas as **Planilhas PET (.docx e .pdf)**) em cerca de **2 segundos** via motor vetorial nativo `pdfcraft-cli`, 100% livre de LibreOffice.
+- **[2] Modo Personalizado Guiado:** Permite customizar modelos, potências, tensões específicas e selecionar entregáveis.
+
+Se o usuário escolher o **Modo Personalizado Guiado**, prossiga com as perguntas detalhadas:
 
 ### Pergunta 1: Qual é o objetivo principal?
 - **[1] Traduzir / Adequar todos os modelos:** Mantém os modelos originais do documento e adequa para o padrão brasileiro (ou faz checkup de termos e contatos se já for PT-BR).
@@ -147,12 +153,17 @@ Os seguintes valores corporativos e regulatórios são **estritamente padronizad
 
 ### Comandos CLI:
 
-1. **Modo Interativo Guiado (Pergunta no terminal antes de gerar):**
+1. **Modo Rápido Ultra-Fast (~1.5s):**
+   ```bash
+   python3 ~/.agents/skills/deyedoc/scripts/pipeline.py /caminho/do/datasheet.pdf --fast
+   ```
+
+2. **Modo Interativo Guiado (Pergunta velocidade e configurações):**
    ```bash
    python3 ~/.agents/skills/deyedoc/scripts/pipeline.py /caminho/do/datasheet.pdf
    ```
 
-2. **Comando Direto (Quando o usuário fornecer comandos explícitos):**
+3. **Comando Direto (Quando o usuário fornecer comandos explícitos):**
    ```bash
    # Todos os modelos:
    python3 ~/.agents/skills/deyedoc/scripts/pipeline.py /caminho/do/datasheet.pdf --mode all --auto

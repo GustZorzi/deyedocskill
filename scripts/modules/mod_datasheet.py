@@ -18,7 +18,21 @@ import zlib
 import subprocess
 import shutil
 import tempfile
+from pathlib import Path
 from collections import defaultdict
+
+# Garante importação dos módulos comuns
+SCRIPT_DIR = Path(__file__).resolve().parent.parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from common.platform_utils import (
+    get_fast_temp_dir,
+    get_temp_file,
+    run_pdfcraft,
+    extract_text_from_pdf,
+    is_windows
+)
 
 
 class SemanticDeyeEngine:
@@ -26,9 +40,8 @@ class SemanticDeyeEngine:
         self.pdf_source = str(pdf_source)
 
     def detect_language(self):
-        """Detecta se o datasheet está em português ou inglês."""
-        res = subprocess.run(["pdftotext", str(self.pdf_source), "-"], capture_output=True, text=True)
-        text = res.stdout.lower()
+        """Detecta se o datasheet está em português ou inglês de forma multiplataforma."""
+        text = extract_text_from_pdf(self.pdf_source).lower()
         pt_words = ['eficiência', 'potência', 'tensão', 'corrente', 'bateria', 'inversor', 'trifásico', 'dados técnicos']
         en_words = ['efficiency', 'power', 'voltage', 'current', 'battery', 'inverter', 'three phase', 'technical data']
         pt_count = sum(text.count(w) for w in pt_words)
@@ -36,10 +49,11 @@ class SemanticDeyeEngine:
         return "PT-BR" if pt_count > en_count else "EN"
 
     def _run_pdfcraft(self, steps):
-        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+        temp_dir = str(get_fast_temp_dir())
+        with tempfile.NamedTemporaryFile("w", suffix=".json", dir=temp_dir, delete=False, encoding="utf-8") as f:
             json.dump(steps, f)
             script_path = f.name
-        res = subprocess.run(["pdfcraft-cli", "run", "--script", script_path, "--report"], capture_output=True, text=True)
+        res = run_pdfcraft(["run", "--script", script_path, "--report"])
         try:
             os.remove(script_path)
         except OSError:
@@ -47,7 +61,7 @@ class SemanticDeyeEngine:
         try:
             return json.loads(res.stdout)
         except Exception as e:
-            print("Erro no pdfcraft:", e, res.stderr)
+            print("Erro no pdfcraft:", e, res.stderr if res else "")
             return None
 
     def read_all_structure(self, pdf_file):
@@ -511,7 +525,7 @@ class SemanticDeyeEngine:
         # =====================================================================
         # LOTE 2: EXECUÇÃO DE TODAS AS EDIÇÕES DE LINHA + INSERÇÕES + RELEITURA DE PARÁGRAFOS
         # =====================================================================
-        tmp_batch1 = "/tmp/deye_batch1_fast.pdf"
+        tmp_batch1 = str(get_temp_file(prefix="deye_batch1_", suffix=".pdf"))
         batch2_steps = [{"tool": "doc_open", "args": {"path": self.pdf_source}}]
 
         for line_no in sorted(p1_line_edits.keys(), reverse=True):
@@ -785,12 +799,10 @@ class SemanticDeyeEngine:
 
 
 if __name__ == "__main__":
-    src = "/home/oem/Documentos/SG05LP3-EU-SM2.pdf"
-    dst = "/home/oem/Documentos/SG05LP3-EU-SM2/Datasheet_SUN-14-20K-SG05LP3-EU-SM2_PT-BR.pdf"
-    if len(sys.argv) > 1:
-        src = sys.argv[1]
-    if len(sys.argv) > 2:
-        dst = sys.argv[2]
+    default_src = Path.home() / "Documentos" / "SG05LP3-EU-SM2.pdf"
+    default_dst = Path.home() / "Documentos" / "SG05LP3-EU-SM2" / "Datasheet_SUN-14-20K-SG05LP3-EU-SM2_PT-BR.pdf"
+    src = sys.argv[1] if len(sys.argv) > 1 else str(default_src)
+    dst = sys.argv[2] if len(sys.argv) > 2 else str(default_dst)
 
     engine = SemanticDeyeEngine(src)
     engine.process_all(dst)

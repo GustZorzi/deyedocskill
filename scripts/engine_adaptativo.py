@@ -15,19 +15,37 @@ import os
 import json
 import subprocess
 import shutil
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from common.platform_utils import (
+    get_fast_temp_dir,
+    get_temp_file,
+    run_pdfcraft,
+    is_windows
+)
 
 class SemanticDeyeEngine:
     def __init__(self, pdf_source):
         self.pdf_source = pdf_source
 
     def _run_pdfcraft(self, steps):
-        with open("/tmp/engine_steps.json", "w", encoding="utf-8") as f:
+        temp_dir = str(get_fast_temp_dir())
+        script_file = get_temp_file(prefix="engine_steps_", suffix=".json")
+        with open(script_file, "w", encoding="utf-8") as f:
             json.dump(steps, f)
-        res = subprocess.run(["pdfcraft-cli", "run", "--script", "/tmp/engine_steps.json", "--report"], capture_output=True, text=True)
+        res = run_pdfcraft(["run", "--script", str(script_file), "--report"])
+        try:
+            os.remove(script_file)
+        except OSError:
+            pass
         try:
             return json.loads(res.stdout)
         except Exception as e:
-            print("Erro no pdfcraft:", e, res.stderr)
+            print("Erro no pdfcraft:", e, res.stderr if res else "")
             return None
 
     def get_lines(self, pdf_file, page):
@@ -165,7 +183,7 @@ class SemanticDeyeEngine:
         return rep and rep.get("ok", False)
 
     def process_all(self, target_pdf):
-        curr = "/tmp/deye_work_0.pdf"
+        curr = str(get_temp_file(prefix="deye_work_0_", suffix=".pdf"))
         shutil.copy2(self.pdf_source, curr)
         step_idx = 1
 
@@ -184,7 +202,7 @@ class SemanticDeyeEngine:
         # ETAPA 1: PÁGINA 1 - TÍTULOS, PILARES E TÓPICOS (FONTE PADRONIZADA 9.5 pt)
         # =====================================================================
         print("--> Processando Página 1...")
-        next_pdf = f"/tmp/deye_work_{step_idx}.pdf"
+        next_pdf = str(get_temp_file(prefix=f"deye_work_{step_idx}_", suffix=".pdf"))
         if self.replace_line_by_match(curr, 1, lambda l: "Three Phase Hybrid Inverter" in l["text"], "Inversor Híbrido Trifásico", next_pdf, {"size": 30.0}):
             curr = next_pdf
             step_idx += 1
@@ -197,7 +215,7 @@ class SemanticDeyeEngine:
             ("Reliable", "Confiável", p1_c2)
         ]
         for src_word, tgt_word, cx in pillars:
-            next_pdf = f"/tmp/deye_work_{step_idx}.pdf"
+            next_pdf = str(get_temp_file(prefix=f"deye_work_{step_idx}_", suffix=".pdf"))
             ok = self.replace_centered_paragraph(curr, 1, lambda p, w=src_word: p["text"].strip() == w, tgt_word, next_pdf, target_cx=cx, box_width=120.0, extra_args={"size": 13.0})
             if ok:
                 curr = next_pdf
@@ -217,7 +235,7 @@ class SemanticDeyeEngine:
             (lambda l: "rated power for each phase" in l["text"], "  100% de saída desbalanceada", {"size": 9.5}),
         ]
         for match_fn, text, args in p1_bullets:
-            next_pdf = f"/tmp/deye_work_{step_idx}.pdf"
+            next_pdf = str(get_temp_file(prefix=f"deye_work_{step_idx}_", suffix=".pdf"))
             if self.replace_line_by_match(curr, 1, match_fn, text, next_pdf, args):
                 curr = next_pdf
                 step_idx += 1
@@ -306,7 +324,7 @@ class SemanticDeyeEngine:
              "End: Av. José Meloni, 295 - Vila Mogilar, Mogi das Cruzes - SP | Tel: (11) 2500-0681 | E-mail: suporte@deyebrasil.com.br", {"size": 7.5})
         ]
         for match_fn, text, args in p2_col1_labels:
-            next_pdf = f"/tmp/deye_work_{step_idx}.pdf"
+            next_pdf = str(get_temp_file(prefix=f"deye_work_{step_idx}_", suffix=".pdf"))
             if self.replace_line_by_match(curr, 2, match_fn, text, next_pdf, extra_args=args):
                 curr = next_pdf
                 step_idx += 1
@@ -339,7 +357,7 @@ class SemanticDeyeEngine:
                 in_row = abs(pcy - ty) < 6.0
                 return in_col and in_row
 
-            next_pdf = f"/tmp/deye_work_{step_idx}.pdf"
+            next_pdf = str(get_temp_file(prefix=f"deye_work_{step_idx}_", suffix=".pdf"))
             ok = self.replace_centered_paragraph(curr, 2, match_cur, val, next_pdf, target_cx=cx, box_width=50.0, extra_args={"size": 7.2})
             if ok:
                 curr = next_pdf
@@ -354,7 +372,7 @@ class SemanticDeyeEngine:
             "Sobretensão CA, Curto-Circuito CA, Monitoramento CC, Falha de Arco AFCI (opcional),\n"
             "Anti-ilhamento, Seccionadora CC, Detecção de Impedância de Isolamento, Corrente Residual"
         )
-        next_pdf = f"/tmp/deye_work_{step_idx}.pdf"
+        next_pdf = str(get_temp_file(prefix=f"deye_work_{step_idx}_", suffix=".pdf"))
         ok = self.replace_centered_paragraph(
             curr, 2,
             lambda p: "Reverse Polarity" in p["text"] or "Polaridade Reversa" in p["text"],
@@ -389,7 +407,7 @@ class SemanticDeyeEngine:
             (lambda p: "5 Years / Up to 10 Years" in p["text"], "5 Anos / Até 10 Anos*", span_center, 140.0, {"size": 7.2})
         ]
         for match_fn, text, cx, w, extra in spanning_edits:
-            next_pdf = f"/tmp/deye_work_{step_idx}.pdf"
+            next_pdf = str(get_temp_file(prefix=f"deye_work_{step_idx}_", suffix=".pdf"))
             ok = self.replace_centered_paragraph(curr, 2, match_fn, text, next_pdf, target_cx=cx, box_width=w, extra_args=extra)
             if ok:
                 curr = next_pdf
@@ -401,12 +419,10 @@ class SemanticDeyeEngine:
         return True
 
 if __name__ == "__main__":
-    src = "/home/oem/Documentos/SG05LP3-EU-SM2.pdf"
-    dst = "/home/oem/Documentos/SG05LP3-EU-SM2/Datasheet_SUN-14-20K-SG05LP3-EU-SM2_PT-BR.pdf"
-    if len(sys.argv) > 1:
-        src = sys.argv[1]
-    if len(sys.argv) > 2:
-        dst = sys.argv[2]
+    default_src = Path.home() / "Documentos" / "SG05LP3-EU-SM2.pdf"
+    default_dst = Path.home() / "Documentos" / "SG05LP3-EU-SM2" / "Datasheet_SUN-14-20K-SG05LP3-EU-SM2_PT-BR.pdf"
+    src = sys.argv[1] if len(sys.argv) > 1 else str(default_src)
+    dst = sys.argv[2] if len(sys.argv) > 2 else str(default_dst)
         
     engine = SemanticDeyeEngine(src)
     engine.process_all(dst)
